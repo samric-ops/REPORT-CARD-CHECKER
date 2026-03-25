@@ -129,8 +129,8 @@ if api_key:
                     
                     # Process subjects
                     results = []
-                    total_for_general = 0      # sum of computed finals for subjects WITH reported final
-                    count_for_general = 0      # number of subjects WITH reported final
+                    total_for_general = 0
+                    count_for_general = 0
                     
                     for item in data.get('subjects', []):
                         subject = item.get('subject', 'Unknown')
@@ -140,24 +140,27 @@ if api_key:
                         q4 = item.get('q4')
                         reported_final = item.get('reported_final')
                         
-                        # Compute the correct final grade from quarters
+                        # Compute the correct final grade from quarters if all quarters present
                         if None not in [q1, q2, q3, q4]:
                             avg = (q1 + q2 + q3 + q4) / 4.0
                             computed_final = round_grade(avg)
-                            
-                            # Only include in general average if this subject has a reported final grade
-                            if reported_final is not None:
-                                total_for_general += computed_final
-                                count_for_general += 1
-                            
-                            # Determine status
-                            if reported_final is not None:
-                                status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
-                            else:
-                                status = "⚠️ Walang nakasulat na final"
                         else:
                             computed_final = "Incomplete"
-                            status = "⚠️ Kulang ang quarterly grades"
+                        
+                        # For general average: only subjects with reported_final are included
+                        if reported_final is not None and computed_final != "Incomplete":
+                            total_for_general += computed_final
+                            count_for_general += 1
+                        
+                        # Determine status for display (only if reported_final exists)
+                        if reported_final is not None:
+                            if computed_final != "Incomplete":
+                                status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                            else:
+                                status = "⚠️ Kulang ang quarterly grades"
+                        else:
+                            # Subjects without reported final grade are not included in the table
+                            continue
                         
                         results.append({
                             "Subject": subject,
@@ -165,21 +168,24 @@ if api_key:
                             "Q2": q2 if q2 is not None else "—",
                             "Q3": q3 if q3 is not None else "—",
                             "Q4": q4 if q4 is not None else "—",
-                            "Nakasulat na Final": reported_final if reported_final is not None else "—",
+                            "Nakasulat na Final": reported_final,
                             "Na-compute na Final": computed_final,
                             "Status": status
                         })
                     
-                    # Display subject grades table
-                    st.subheader("📚 Subject Grades Check")
-                    df = pd.DataFrame(results)
-                    st.dataframe(df, use_container_width=True, height=400)
+                    # Display subject grades table (only those with reported final)
+                    if results:
+                        st.subheader("📚 Subject Grades Check")
+                        df = pd.DataFrame(results)
+                        st.dataframe(df, use_container_width=True, height=400)
+                    else:
+                        st.warning("Walang nakitang subject na may nakasulat na final grade.")
                     
                     # General Average
                     st.subheader("📈 General Average Check")
                     if count_for_general > 0:
                         computed_avg_decimal = total_for_general / count_for_general
-                        computed_avg_rounded = round_grade(computed_avg_decimal)  # round to integer
+                        computed_avg_rounded = round_grade(computed_avg_decimal)
                         reported_avg = data.get('reported_general_average')
                         
                         col1, col2 = st.columns(2)
@@ -189,7 +195,6 @@ if api_key:
                             st.metric("Na-compute ng System (batay sa mga asignaturang may final grade)", computed_avg_rounded)
                         
                         if reported_avg is not None:
-                            # Convert both to integers for comparison (after rounding)
                             if int(computed_avg_rounded) == int(reported_avg):
                                 st.success("✅ Tama ang General Average!")
                             else:
@@ -200,13 +205,14 @@ if api_key:
                         st.warning("Walang kumpletong quarterly grades na makuha. Hindi makalkula ang general average.")
                     
                     # Download button
-                    csv = df.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 I-download ang resulta (CSV)",
-                        data=csv,
-                        file_name="grade_check_results.csv",
-                        mime="text/csv",
-                    )
+                    if results:
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 I-download ang resulta (CSV)",
+                            data=csv,
+                            file_name="grade_check_results.csv",
+                            mime="text/csv",
+                        )
                     
                 except json.JSONDecodeError:
                     st.error("❌ Hindi ma-parse ang sagot mula sa Gemini. Maaaring hindi malinaw ang larawan.")
