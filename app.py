@@ -5,10 +5,10 @@ import pandas as pd
 import json
 import re
 
-# Page configuration
+# Page config
 st.set_page_config(page_title="Report Card Checker", page_icon="📝", layout="wide")
 
-# Custom CSS for better styling
+# Custom CSS for nicer UI
 st.markdown("""
     <style>
     .main-header {
@@ -22,22 +22,12 @@ st.markdown("""
         color: #4a6a5c;
         margin-bottom: 2rem;
     }
-    .grade-table {
-        margin-top: 1rem;
-        margin-bottom: 1rem;
-    }
     .success-text {
         color: #28a745;
         font-weight: bold;
-        font-size: 1.2rem;
     }
     .error-text {
         color: #dc3545;
-        font-weight: bold;
-        font-size: 1.2rem;
-    }
-    .warning-text {
-        color: #ffc107;
         font-weight: bold;
     }
     footer {
@@ -49,59 +39,60 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Title and description
 st.markdown('<div class="main-header">📝 Report Card Grade Checker</div>', unsafe_allow_html=True)
 st.markdown('<div class="subheader">I-upload ang larawan ng report card para awtomatikong suriin ang mga kalkulasyon.</div>', unsafe_allow_html=True)
 
-# Sidebar for API key and settings
+# Sidebar
 with st.sidebar:
     st.header("🔑 Settings")
-    api_key = st.text_input("Google Gemini API Key", type="password", help="Kumuha ng API key mula sa Google AI Studio")
+    api_key = st.text_input("Google Gemini API Key", type="password", 
+                            help="Kumuha ng API key mula sa Google AI Studio")
     
-    # Model selection to avoid 404 errors
-    model_options = {
-        "gemini-1.5-flash": "Gemini 1.5 Flash (mabilis, balanse)",
-        "gemini-1.5-pro": "Gemini 1.5 Pro (mas malakas, mas tumpak)",
-        "gemini-1.0-pro": "Gemini 1.0 Pro (legacy)"
-    }
-    selected_model = st.selectbox("Pumili ng Gemini model", options=list(model_options.keys()), format_func=lambda x: model_options[x])
+    if api_key:
+        try:
+            genai.configure(api_key=api_key)
+            # Fetch available models
+            models = genai.list_models()
+            # Filter for generateContent support
+            available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+            # Clean up model names (remove 'models/' prefix for display)
+            model_display = [m.replace('models/', '') for m in available_models]
+            selected_model_full = st.selectbox(
+                "Pumili ng Gemini model",
+                available_models,
+                format_func=lambda x: x.replace('models/', '')
+            )
+        except Exception as e:
+            st.error(f"Error connecting to Gemini: {e}")
+            st.stop()
+    else:
+        st.info("Maglagay ng API key para makapili ng modelo.")
+        st.stop()
     
     st.markdown("---")
     st.markdown("### Paano gamitin")
     st.markdown("""
     1. Ipasok ang iyong Gemini API key.
-    2. I-upload ang larawan ng report card (JPG/PNG).
-    3. I-click ang **Check Grades**.
-    4. Tingnan ang resulta sa ibaba.
+    2. Pumili ng model (automatic na naglo-load ng available models).
+    3. I-upload ang larawan ng report card (JPG/PNG).
+    4. I-click ang **Check Grades**.
+    5. Tingnan ang resulta sa ibaba.
     """)
 
-# Main content area
-if not api_key:
-    st.info("🔐 Mangyaring ilagay ang iyong Gemini API key sa sidebar para makapagsimula.")
-else:
-    # Configure Gemini
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        st.error(f"⚠️ Error sa pag-configure ng API key: {e}")
-        st.stop()
-
-    # File uploader
+# Main area
+if api_key:
     uploaded_file = st.file_uploader("Pumili ng larawan (JPG, PNG)", type=['jpg', 'jpeg', 'png'])
 
     if uploaded_file is not None:
         image = Image.open(uploaded_file)
-        # Show image with fixed width
         st.image(image, caption="Uploaded Report Card", use_container_width=True)
 
-        # Check button
         if st.button("🔍 Check Grades", type="primary"):
             with st.spinner("Binabasa ang report card at kinukuha ang mga grado..."):
                 try:
-                    # Create model instance
-                    model = genai.GenerativeModel(selected_model)
+                    model = genai.GenerativeModel(selected_model_full)  # use full name like 'models/gemini-2.0-flash-exp'
                     
-                    # Prompt designed for better JSON extraction
+                    # Improved prompt for better extraction
                     prompt = """
                     Analyze this image of a student report card. Extract:
                     - For each subject: the subject name, four quarterly grades (Q1, Q2, Q3, Q4), and the final grade (if visible).
@@ -125,22 +116,19 @@ else:
                     If a grade is missing or unclear, use null. Use numbers only for grades. If no general average is visible, set it to null.
                     """
                     
-                    # Generate content
                     response = model.generate_content([prompt, image])
                     
-                    # Extract JSON from response (clean markdown if present)
+                    # Extract JSON from response
                     raw_text = response.text.strip()
-                    # Remove markdown code block markers
                     json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', raw_text)
                     if json_match:
                         json_str = json_match.group(1)
                     else:
                         json_str = raw_text
                     
-                    # Try to parse JSON
                     data = json.loads(json_str)
                     
-                    # Process subjects data
+                    # Process subjects
                     results = []
                     total_computed = 0
                     valid_count = 0
@@ -153,9 +141,8 @@ else:
                         q4 = item.get('q4')
                         reported_final = item.get('reported_final')
                         
-                        # Compute average if all quarters available
                         if None not in [q1, q2, q3, q4]:
-                            computed_final = round((q1 + q2 + q3 + q4) / 4)  # DepEd rounding to whole number
+                            computed_final = round((q1 + q2 + q3 + q4) / 4)
                             total_computed += computed_final
                             valid_count += 1
                             
@@ -179,13 +166,11 @@ else:
                         })
                     
                     # Display subject grades table
-                    st.markdown("---")
                     st.subheader("📚 Subject Grades Check")
                     df = pd.DataFrame(results)
                     st.dataframe(df, use_container_width=True, height=400)
                     
-                    # General Average checking
-                    st.markdown("---")
+                    # General Average
                     st.subheader("📈 General Average Check")
                     if valid_count > 0:
                         computed_avg = round(total_computed / valid_count, 2)
@@ -198,7 +183,7 @@ else:
                             st.metric("Na-compute ng System", computed_avg)
                         
                         if reported_avg is not None:
-                            if abs(float(reported_avg) - computed_avg) < 0.01:  # allow small floating point difference
+                            if abs(float(reported_avg) - computed_avg) < 0.01:
                                 st.success("✅ Tama ang General Average!")
                             else:
                                 st.error("❌ Mali ang General Average. Pakisuri ang mga grades.")
@@ -207,8 +192,7 @@ else:
                     else:
                         st.warning("Walang kumpletong quarterly grades na makuha. Hindi makalkula ang general average.")
                     
-                    # Optional: download results as CSV
-                    st.markdown("---")
+                    # Download button
                     csv = df.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="📥 I-download ang resulta (CSV)",
@@ -217,16 +201,17 @@ else:
                         mime="text/csv",
                     )
                     
-                except json.JSONDecodeError as je:
-                    st.error("❌ Hindi ma-parse ang sagot mula sa Gemini. Maaaring hindi malinaw ang larawan o may ibang problema.")
+                except json.JSONDecodeError:
+                    st.error("❌ Hindi ma-parse ang sagot mula sa Gemini. Maaaring hindi malinaw ang larawan.")
                     st.text("Raw response:")
                     st.code(raw_text)
                 except Exception as e:
                     st.error(f"May naging error: {e}")
                     st.info("Subukan ang ibang model sa sidebar o tiyaking malinaw ang larawan.")
-
     else:
         st.info("📸 Pumili ng larawan ng report card upang magsimula.")
+else:
+    st.warning("🔑 Mangyaring ilagay ang iyong Gemini API key sa sidebar para makapagsimula.")
 
 # Footer
 st.markdown("---")
