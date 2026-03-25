@@ -178,17 +178,19 @@ if api_key:
                     # General Average
                     st.subheader("📈 General Average Check")
                     if count_for_general > 0:
-                        computed_avg = round(total_for_general / count_for_general, 2)
+                        computed_avg_decimal = total_for_general / count_for_general
+                        computed_avg_rounded = round_grade(computed_avg_decimal)  # round to integer
                         reported_avg = data.get('reported_general_average')
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             st.metric("Nakasulat na General Average", reported_avg if reported_avg is not None else "—")
                         with col2:
-                            st.metric("Na-compute ng System (batay sa mga asignaturang may final grade)", computed_avg)
+                            st.metric("Na-compute ng System (batay sa mga asignaturang may final grade)", computed_avg_rounded)
                         
                         if reported_avg is not None:
-                            if abs(float(reported_avg) - computed_avg) < 0.01:
+                            # Convert both to integers for comparison (after rounding)
+                            if int(computed_avg_rounded) == int(reported_avg):
                                 st.success("✅ Tama ang General Average!")
                             else:
                                 st.error("❌ Mali ang General Average. Pakisuri ang mga grades.")
