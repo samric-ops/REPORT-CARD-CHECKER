@@ -126,11 +126,10 @@ if api_key:
                         }
                     
                     # --- Identify MAPEH and its subcomponents ---
-                    # Normalize names for robust matching
                     normalized_names = {key.strip().lower(): key for key in subjects}
                     mapeh_key = None
                     subcomponents = ['music', 'arts', 'pe', 'health']
-                    sub_mapping = {}  # maps subcomponent name (e.g., 'music') to original subject key
+                    sub_mapping = {}  # maps subcomponent name to original key
                     
                     # Find MAPEH entry
                     for norm_name, orig_name in normalized_names.items():
@@ -138,21 +137,26 @@ if api_key:
                             mapeh_key = orig_name
                             break
                     
-                    # Find subcomponent entries (exact or contains)
+                    # Find subcomponent entries (allow variations)
                     for sc in subcomponents:
                         for norm_name, orig_name in normalized_names.items():
-                            # Allow variations like "Physical Education" for "pe"
                             if norm_name == sc or (sc == 'pe' and 'physical' in norm_name) or (sc in norm_name):
                                 sub_mapping[sc] = orig_name
                                 break
                     
-                    # Store computed MAPEH quarterlies for later display/comparison
+                    # Store MAPEH data separately (original vs computed)
                     mapeh_computed_quarters = {'q1': None, 'q2': None, 'q3': None, 'q4': None}
                     mapeh_quarter_status = {}
+                    mapeh_reported_final = None
+                    mapeh_computed_final = None
                     
                     # --- Compute MAPEH quarterly grades if subcomponents exist ---
                     if mapeh_key and len(sub_mapping) == 4:
-                        # For each quarter, compute average of subcomponent grades
+                        # Get original MAPEH data
+                        orig_mapeh = subjects[mapeh_key]
+                        mapeh_reported_final = orig_mapeh.get('reported_final')
+                        
+                        # Collect subcomponent grades per quarter
                         mapeh_q = {'q1': [], 'q2': [], 'q3': [], 'q4': []}
                         for sc, key in sub_mapping.items():
                             sub = subjects[key]
@@ -161,20 +165,18 @@ if api_key:
                                     if sub[q] is not None:
                                         mapeh_q[q].append(sub[q])
                         
-                        # Compute MAPEH's quarterly grades (round each average)
-                        mapeh_quarters = {}
+                        # Compute correct quarterlies
                         for q in ['q1', 'q2', 'q3', 'q4']:
                             if len(mapeh_q[q]) == 4:
                                 avg = sum(mapeh_q[q]) / 4.0
-                                mapeh_quarters[q] = round_grade(avg)
+                                mapeh_computed_quarters[q] = round_grade(avg)
                             else:
-                                mapeh_quarters[q] = None
+                                mapeh_computed_quarters[q] = None
                         
                         # Compare with reported MAPEH quarterlies
-                        reported_mapeh = subjects[mapeh_key]
                         for q in ['q1', 'q2', 'q3', 'q4']:
-                            reported = reported_mapeh[q]
-                            computed = mapeh_quarters[q]
+                            reported = orig_mapeh[q]
+                            computed = mapeh_computed_quarters[q]
                             if computed is not None and reported is not None:
                                 if computed != reported:
                                     mapeh_quarter_status[q] = f"❌ Mali (dapat {computed})"
@@ -185,35 +187,34 @@ if api_key:
                             else:
                                 mapeh_quarter_status[q] = "⚠️ Walang nakasulat"
                         
-                        # Compute MAPEH's final grade from its computed quarterlies
-                        if all(v is not None for v in mapeh_quarters.values()):
-                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)
+                        # Compute MAPEH final grade from corrected quarterlies
+                        if all(v is not None for v in mapeh_computed_quarters.values()):
+                            mapeh_computed_final = round_grade(sum(mapeh_computed_quarters.values()) / 4.0)
                         else:
-                            mapeh_final = "Incomplete"
+                            mapeh_computed_final = "Incomplete"
                         
-                        # Override MAPEH entry with computed quarterlies and final
-                        subjects[mapeh_key]['q1'] = mapeh_quarters['q1']
-                        subjects[mapeh_key]['q2'] = mapeh_quarters['q2']
-                        subjects[mapeh_key]['q3'] = mapeh_quarters['q3']
-                        subjects[mapeh_key]['q4'] = mapeh_quarters['q4']
-                        subjects[mapeh_key]['computed_final'] = mapeh_final
-                        subjects[mapeh_key]['has_quarters'] = all(v is not None for v in mapeh_quarters.values())
-                        subjects[mapeh_key]['quarter_status'] = mapeh_quarter_status  # store for display
+                        # Mark that we have computed MAPEH values (to avoid later recomputation)
+                        subjects[mapeh_key]['has_mapeh_computed'] = True
+                        subjects[mapeh_key]['mapeh_computed_quarters'] = mapeh_computed_quarters
+                        subjects[mapeh_key]['mapeh_computed_final'] = mapeh_computed_final
+                        subjects[mapeh_key]['mapeh_quarter_status'] = mapeh_quarter_status
                     else:
-                        # No MAPEH or missing subcomponents: compute final from its own quarters if available
-                        for key in subjects:
-                            sub = subjects[key]
-                            if sub['has_quarters']:
-                                sub['computed_final'] = round_grade((sub['q1'] + sub['q2'] + sub['q3'] + sub['q4']) / 4.0)
-                            else:
-                                sub['computed_final'] = "Incomplete"
+                        # No MAPEH or missing subcomponents: use original quarterlies for final
+                        if mapeh_key:
+                            subjects[mapeh_key]['has_mapeh_computed'] = False
                     
-                    # --- Compute final grades for subjects that haven't been processed yet ---
-                    for key, sub in subjects.items():
-                        if 'computed_final' not in sub and sub['has_quarters']:
-                            sub['computed_final'] = round_grade((sub['q1'] + sub['q2'] + sub['q3'] + sub['q4']) / 4.0)
-                        elif 'computed_final' not in sub:
-                            sub['computed_final'] = "Incomplete"
+                    # --- Compute final grades for all subjects ---
+                    for name, info in subjects.items():
+                        # Skip MAPEH if we already computed its final
+                        if name == mapeh_key and info.get('has_mapeh_computed'):
+                            # Already have computed_final stored
+                            continue
+                        
+                        # For all other subjects, compute final from own quarters if possible
+                        if info['has_quarters']:
+                            info['computed_final'] = round_grade((info['q1'] + info['q2'] + info['q3'] + info['q4']) / 4.0)
+                        else:
+                            info['computed_final'] = "Incomplete"
                     
                     # --- Build results table ---
                     results = []
@@ -226,35 +227,71 @@ if api_key:
                     
                     for name, info in subjects.items():
                         subject = name
-                        q1 = info['q1']
-                        q2 = info['q2']
-                        q3 = info['q3']
-                        q4 = info['q4']
-                        reported_final = info.get('reported_final')
-                        computed_final = info['computed_final']
-                        has_quarters = info['has_quarters']
-                        
-                        # Determine status for final grade
-                        if reported_final is not None:
-                            if has_quarters and computed_final != "Incomplete":
-                                final_status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                        # For MAPEH, use original reported quarterlies for display
+                        if name == mapeh_key:
+                            q1 = info['q1']
+                            q2 = info['q2']
+                            q3 = info['q3']
+                            q4 = info['q4']
+                            reported_final = info.get('reported_final')
+                            
+                            # Get computed values if available
+                            if info.get('has_mapeh_computed'):
+                                computed_final = info['mapeh_computed_final']
+                                quarter_status = info['mapeh_quarter_status']
+                                # Build status string for MAPEH quarters
+                                status_str = ", ".join([f"{q.upper()}: {s}" for q, s in quarter_status.items()])
+                                # Determine final grade status
+                                if reported_final is not None:
+                                    if computed_final != "Incomplete":
+                                        final_status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                                    else:
+                                        final_status = "⚠️ Kulang ang quarterly grades"
+                                else:
+                                    final_status = "⚠️ Walang nakasulat na final"
                             else:
-                                final_status = "⚠️ Kulang ang quarterly grades"
+                                # No subcomponents, treat like regular subject
+                                computed_final = info.get('computed_final', "Incomplete")
+                                status_str = "—"
+                                if reported_final is not None:
+                                    if info['has_quarters'] and computed_final != "Incomplete":
+                                        final_status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                                    else:
+                                        final_status = "⚠️ Kulang ang quarterly grades"
+                                else:
+                                    final_status = "⚠️ Walang nakasulat na final"
                         else:
-                            final_status = "⚠️ Walang nakasulat na final"
+                            # Regular subject
+                            q1 = info['q1']
+                            q2 = info['q2']
+                            q3 = info['q3']
+                            q4 = info['q4']
+                            reported_final = info.get('reported_final')
+                            computed_final = info.get('computed_final', "Incomplete")
+                            status_str = ""
+                            if reported_final is not None:
+                                if info['has_quarters'] and computed_final != "Incomplete":
+                                    final_status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                                else:
+                                    final_status = "⚠️ Kulang ang quarterly grades"
+                            else:
+                                final_status = "⚠️ Walang nakasulat na final"
                         
-                        # For MAPEH, also show quarterly status in a separate column (optional)
-                        if subject.lower() == mapeh_key.lower() and 'quarter_status' in info:
-                            quarter_status_str = ", ".join([f"{q.upper()}: {s}" for q, s in info['quarter_status'].items()])
-                        else:
-                            quarter_status_str = ""
-                        
-                        # For general average: only core subjects with complete quarters
+                        # Determine if this subject is core for general average
                         normalized = name.lower()
                         is_core = any(normalized.startswith(core) or core in normalized for core in core_names)
-                        if is_core and has_quarters and computed_final != "Incomplete":
-                            total_for_general += computed_final
-                            count_for_general += 1
+                        
+                        # Use the correct computed final for general average
+                        # For MAPEH with subcomponents, use computed_final; for others, use their computed_final
+                        if is_core:
+                            if name == mapeh_key and info.get('has_mapeh_computed'):
+                                final_for_avg = computed_final if computed_final != "Incomplete" else None
+                            else:
+                                final_for_avg = computed_final if computed_final != "Incomplete" else None
+                            
+                            if final_for_avg is not None and isinstance(final_for_avg, (int, float)):
+                                total_for_general += final_for_avg
+                                count_for_general += 1
                         
                         results.append({
                             "Subject": subject,
@@ -265,14 +302,14 @@ if api_key:
                             "Nakasulat na Final": reported_final if reported_final is not None else "—",
                             "Na-compute na Final": computed_final,
                             "Status (Final)": final_status,
-                            "MAPEH Quarterly Check": quarter_status_str
+                            "MAPEH Quarterly Check": status_str
                         })
                     
                     # Display subject grades table
                     if results:
                         st.subheader("📚 Subject Grades Check")
                         df = pd.DataFrame(results)
-                        # Reorder columns for better readability
+                        # Reorder columns
                         cols = ["Subject", "Q1", "Q2", "Q3", "Q4", "Nakasulat na Final", "Na-compute na Final", "Status (Final)", "MAPEH Quarterly Check"]
                         df = df[cols]
                         st.dataframe(df, use_container_width=True, height=400)
