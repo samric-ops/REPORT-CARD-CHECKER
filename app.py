@@ -147,20 +147,19 @@ if api_key:
                         else:
                             computed_final = "Incomplete"
                         
-                        # For general average: only subjects with reported_final are included
+                        # For general average: only subjects with a reported final grade
                         if reported_final is not None and computed_final != "Incomplete":
                             total_for_general += computed_final
                             count_for_general += 1
                         
-                        # Determine status for display (only if reported_final exists)
+                        # Determine status for display
                         if reported_final is not None:
                             if computed_final != "Incomplete":
                                 status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
                             else:
                                 status = "⚠️ Kulang ang quarterly grades"
                         else:
-                            # Subjects without reported final grade are not included in the table
-                            continue
+                            status = "⚠️ Walang nakasulat na final"
                         
                         results.append({
                             "Subject": subject,
@@ -168,18 +167,18 @@ if api_key:
                             "Q2": q2 if q2 is not None else "—",
                             "Q3": q3 if q3 is not None else "—",
                             "Q4": q4 if q4 is not None else "—",
-                            "Nakasulat na Final": reported_final,
+                            "Nakasulat na Final": reported_final if reported_final is not None else "—",
                             "Na-compute na Final": computed_final,
                             "Status": status
                         })
                     
-                    # Display subject grades table (only those with reported final)
+                    # Display subject grades table (all subjects)
                     if results:
                         st.subheader("📚 Subject Grades Check")
                         df = pd.DataFrame(results)
                         st.dataframe(df, use_container_width=True, height=400)
                     else:
-                        st.warning("Walang nakitang subject na may nakasulat na final grade.")
+                        st.warning("Walang nakitang subject sa report card.")
                     
                     # General Average
                     st.subheader("📈 General Average Check")
