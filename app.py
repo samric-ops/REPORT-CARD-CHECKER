@@ -170,19 +170,23 @@ if uploaded:
             rows = []
 
             for name, s in subjects.items():
-
-                if name == mapeh_key:
+                # Handle MAPEH Q1 status only if computed_q exists
+                if name == mapeh_key and "computed_q" in s:
                     cq1 = s["computed_q"]["q1"]
                     q1_status = "✅ Tama" if s["q1"] == cq1 else "❌ Mali"
                 else:
                     cq1 = "—"
                     q1_status = "—"
 
-                status = (
-                    "✅ Tama"
-                    if s["reported_final"] == s["computed_final"]
-                    else "❌ Mali"
-                ) if s["reported_final"] is not None else "⚠️ Walang Final"
+                # Final grade status
+                if s["reported_final"] is not None:
+                    final_status = (
+                        "✅ Tama"
+                        if s["reported_final"] == s["computed_final"]
+                        else "❌ Mali"
+                    )
+                else:
+                    final_status = "⚠️ Walang Final"
 
                 rows.append({
                     "Subject": name,
@@ -191,7 +195,7 @@ if uploaded:
                     "Q1 Status": q1_status,
                     "Reported Final": s["reported_final"],
                     "Computed Final": s["computed_final"],
-                    "Final Status": status
+                    "Final Status": final_status
                 })
 
             df = pd.DataFrame(rows)
