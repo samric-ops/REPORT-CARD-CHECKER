@@ -6,7 +6,7 @@ import json
 import re
 import math
 
-# Custom rounding for grades (DepEd style)
+# Custom rounding for grades (DepEd style: 0.5 rounds up)
 def round_grade(avg):
     """Rounds a numeric average to the nearest integer (0.5 rounds up)."""
     return math.floor(avg + 0.5)
@@ -174,13 +174,13 @@ if api_key:
                         for q in ['q1', 'q2', 'q3', 'q4']:
                             if len(mapeh_q[q]) == 4:
                                 avg = sum(mapeh_q[q]) / 4.0
-                                mapeh_quarters[q] = round_grade(avg)
+                                mapeh_quarters[q] = round_grade(avg)   # ✅ Each quarter grade is rounded
                             else:
                                 mapeh_quarters[q] = None
                         
-                        # Compute MAPEH's final grade from its quarterlies
+                        # Compute MAPEH's final grade from its quarterlies (average of rounded quarterlies, then round)
                         if all(v is not None for v in mapeh_quarters.values()):
-                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)
+                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)   # ✅ Final grade rounded
                         else:
                             mapeh_final = "Incomplete"
                         
