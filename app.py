@@ -4,6 +4,17 @@ from PIL import Image
 import pandas as pd
 import json
 import re
+import math
+
+# ------------------------------
+# Custom rounding for grades
+# ------------------------------
+def round_grade(avg):
+    """
+    Rounds a numeric average to the nearest integer.
+    If the decimal part is 0.5 or higher, round up; otherwise round down.
+    """
+    return math.floor(avg + 0.5)
 
 # Page config
 st.set_page_config(page_title="Report Card Checker", page_icon="📝", layout="wide")
@@ -55,8 +66,9 @@ with st.sidebar:
             models = genai.list_models()
             # Filter for generateContent support
             available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
-            # Clean up model names (remove 'models/' prefix for display)
-            model_display = [m.replace('models/', '') for m in available_models]
+            if not available_models:
+                st.error("Walang available na modelo para sa generateContent. Tiyaking tama ang API key.")
+                st.stop()
             selected_model_full = st.selectbox(
                 "Pumili ng Gemini model",
                 available_models,
@@ -90,7 +102,7 @@ if api_key:
         if st.button("🔍 Check Grades", type="primary"):
             with st.spinner("Binabasa ang report card at kinukuha ang mga grado..."):
                 try:
-                    model = genai.GenerativeModel(selected_model_full)  # use full name like 'models/gemini-2.0-flash-exp'
+                    model = genai.GenerativeModel(selected_model_full)
                     
                     # Improved prompt for better extraction
                     prompt = """
@@ -142,7 +154,8 @@ if api_key:
                         reported_final = item.get('reported_final')
                         
                         if None not in [q1, q2, q3, q4]:
-                            computed_final = round((q1 + q2 + q3 + q4) / 4)
+                            avg = (q1 + q2 + q3 + q4) / 4.0
+                            computed_final = round_grade(avg)   # <--- FIXED ROUNDING
                             total_computed += computed_final
                             valid_count += 1
                             
