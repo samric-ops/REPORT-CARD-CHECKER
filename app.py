@@ -8,10 +8,7 @@ import math
 
 # Custom rounding for grades (DepEd style)
 def round_grade(avg):
-    """
-    Rounds a numeric average to the nearest integer.
-    If the decimal part is 0.5 or higher, round up; otherwise round down.
-    """
+    """Rounds a numeric average to the nearest integer (0.5 rounds up)."""
     return math.floor(avg + 0.5)
 
 # Page config
@@ -127,39 +124,105 @@ if api_key:
                     
                     data = json.loads(json_str)
                     
-                    # Process subjects
-                    results = []
-                    total_for_general = 0
-                    count_for_general = 0
-                    
+                    # --- Process subjects into a dictionary for easy lookup ---
+                    subjects_dict = {}
                     for item in data.get('subjects', []):
-                        subject = item.get('subject', 'Unknown')
+                        name = item.get('subject', 'Unknown').strip()
                         q1 = item.get('q1')
                         q2 = item.get('q2')
                         q3 = item.get('q3')
                         q4 = item.get('q4')
                         reported_final = item.get('reported_final')
                         
-                        # Compute the correct final grade from quarters if all quarters present
+                        # Compute final from quarters if all present
                         if None not in [q1, q2, q3, q4]:
                             avg = (q1 + q2 + q3 + q4) / 4.0
                             computed_final = round_grade(avg)
+                            has_quarters = True
                         else:
                             computed_final = "Incomplete"
+                            has_quarters = False
                         
-                        # For general average: only subjects with a reported final grade
-                        if reported_final is not None and computed_final != "Incomplete":
-                            total_for_general += computed_final
-                            count_for_general += 1
+                        subjects_dict[name] = {
+                            'q1': q1, 'q2': q2, 'q3': q3, 'q4': q4,
+                            'reported_final': reported_final,
+                            'computed_final': computed_final,
+                            'has_quarters': has_quarters
+                        }
+                    
+                    # --- Handle MAPEH: compute from subcomponents ---
+                    # Define subcomponent names (case‑insensitive)
+                    subcomponents = ['music', 'arts', 'pe', 'health']
+                    # Find MAPEH entry (may be "MAPEH", "MAPEH (Music, Arts, PE, Health)", etc.)
+                    mapeh_key = None
+                    for key in subjects_dict:
+                        if 'mapeh' in key.lower():
+                            mapeh_key = key
+                            break
+                    
+                    if mapeh_key:
+                        # Collect computed finals of subcomponents
+                        sub_finals = []
+                        for sc in subcomponents:
+                            # Look for exact match or any key containing the subcomponent name
+                            found = None
+                            for key in subjects_dict:
+                                if key.lower() == sc or sc in key.lower():
+                                    found = key
+                                    break
+                            if found and subjects_dict[found]['has_quarters']:
+                                sub_finals.append(subjects_dict[found]['computed_final'])
                         
-                        # Determine status for display
+                        # If we have all four, compute MAPEH's correct final
+                        if len(sub_finals) == 4:
+                            mapeh_avg = sum(sub_finals) / 4.0
+                            mapeh_correct = round_grade(mapeh_avg)
+                            
+                            # Override the MAPEH entry's computed final
+                            subjects_dict[mapeh_key]['computed_final'] = mapeh_correct
+                            
+                            # If MAPEH had no quarters, mark as having quarters now
+                            if not subjects_dict[mapeh_key]['has_quarters']:
+                                subjects_dict[mapeh_key]['has_quarters'] = True
+                        else:
+                            # Not all subcomponents found – keep MAPEH's own computed final (if any)
+                            pass
+                    
+                    # --- Build results table for all subjects ---
+                    results = []
+                    # Core subjects that should be included in general average
+                    core_subjects = ['filipino', 'english', 'mathematics', 'science', 
+                                     'araling panlipunan', 'edukasyon sa pagpapakatao',
+                                     'technology and livelihood education', 'mapeh']
+                    
+                    total_for_general = 0
+                    count_for_general = 0
+                    
+                    for name, info in subjects_dict.items():
+                        subject = name
+                        q1 = info['q1']
+                        q2 = info['q2']
+                        q3 = info['q3']
+                        q4 = info['q4']
+                        reported_final = info['reported_final']
+                        computed_final = info['computed_final']
+                        has_quarters = info['has_quarters']
+                        
+                        # Determine status
                         if reported_final is not None:
-                            if computed_final != "Incomplete":
+                            if has_quarters and computed_final != "Incomplete":
                                 status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
                             else:
                                 status = "⚠️ Kulang ang quarterly grades"
                         else:
                             status = "⚠️ Walang nakasulat na final"
+                        
+                        # For general average: only core subjects that have a computed final (from quarters)
+                        normalized = subject.lower()
+                        is_core = any(normalized.startswith(core) or core in normalized for core in core_subjects)
+                        if is_core and has_quarters and computed_final != "Incomplete":
+                            total_for_general += computed_final
+                            count_for_general += 1
                         
                         results.append({
                             "Subject": subject,
@@ -172,7 +235,7 @@ if api_key:
                             "Status": status
                         })
                     
-                    # Display subject grades table (all subjects)
+                    # Display subject grades table
                     if results:
                         st.subheader("📚 Subject Grades Check")
                         df = pd.DataFrame(results)
@@ -191,7 +254,7 @@ if api_key:
                         with col1:
                             st.metric("Nakasulat na General Average", reported_avg if reported_avg is not None else "—")
                         with col2:
-                            st.metric("Na-compute ng System (batay sa mga asignaturang may final grade)", computed_avg_rounded)
+                            st.metric("Na-compute ng System (batay sa core subjects)", computed_avg_rounded)
                         
                         if reported_avg is not None:
                             if int(computed_avg_rounded) == int(reported_avg):
@@ -201,7 +264,7 @@ if api_key:
                         else:
                             st.info("ℹ️ Walang nakasulat na General Average sa report card.")
                     else:
-                        st.warning("Walang kumpletong quarterly grades na makuha. Hindi makalkula ang general average.")
+                        st.warning("Walang sapat na quarterly grades para sa core subjects. Hindi makalkula ang general average.")
                     
                     # Download button
                     if results:
