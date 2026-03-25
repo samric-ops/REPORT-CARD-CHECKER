@@ -124,8 +124,8 @@ if api_key:
                     
                     data = json.loads(json_str)
                     
-                    # --- Process subjects into a dictionary for easy lookup ---
-                    subjects_dict = {}
+                    # --- Build dictionary of all subjects with quarter grades ---
+                    subjects = {}
                     for item in data.get('subjects', []):
                         name = item.get('subject', 'Unknown').strip()
                         q1 = item.get('q1')
@@ -134,77 +134,96 @@ if api_key:
                         q4 = item.get('q4')
                         reported_final = item.get('reported_final')
                         
-                        # Compute final from quarters if all present
-                        if None not in [q1, q2, q3, q4]:
-                            avg = (q1 + q2 + q3 + q4) / 4.0
-                            computed_final = round_grade(avg)
-                            has_quarters = True
-                        else:
-                            computed_final = "Incomplete"
-                            has_quarters = False
-                        
-                        subjects_dict[name] = {
+                        subjects[name] = {
                             'q1': q1, 'q2': q2, 'q3': q3, 'q4': q4,
                             'reported_final': reported_final,
-                            'computed_final': computed_final,
-                            'has_quarters': has_quarters
+                            'has_quarters': None not in [q1, q2, q3, q4]
                         }
                     
-                    # --- Handle MAPEH: compute from subcomponents ---
-                    # Define subcomponent names (case‑insensitive)
-                    subcomponents = ['music', 'arts', 'pe', 'health']
-                    # Find MAPEH entry (may be "MAPEH", "MAPEH (Music, Arts, PE, Health)", etc.)
+                    # --- Identify MAPEH and its subcomponents ---
                     mapeh_key = None
-                    for key in subjects_dict:
+                    subcomponents = ['music', 'arts', 'pe', 'health']
+                    sub_mapping = {}
+                    
+                    # First, find MAPEH entry (case-insensitive)
+                    for key in subjects:
                         if 'mapeh' in key.lower():
                             mapeh_key = key
                             break
                     
-                    if mapeh_key:
-                        # Collect computed finals of subcomponents
-                        sub_finals = []
-                        for sc in subcomponents:
-                            # Look for exact match or any key containing the subcomponent name
-                            found = None
-                            for key in subjects_dict:
-                                if key.lower() == sc or sc in key.lower():
-                                    found = key
-                                    break
-                            if found and subjects_dict[found]['has_quarters']:
-                                sub_finals.append(subjects_dict[found]['computed_final'])
-                        
-                        # If we have all four, compute MAPEH's correct final
-                        if len(sub_finals) == 4:
-                            mapeh_avg = sum(sub_finals) / 4.0
-                            mapeh_correct = round_grade(mapeh_avg)
-                            
-                            # Override the MAPEH entry's computed final
-                            subjects_dict[mapeh_key]['computed_final'] = mapeh_correct
-                            
-                            # If MAPEH had no quarters, mark as having quarters now
-                            if not subjects_dict[mapeh_key]['has_quarters']:
-                                subjects_dict[mapeh_key]['has_quarters'] = True
-                        else:
-                            # Not all subcomponents found – keep MAPEH's own computed final (if any)
-                            pass
+                    # Find subcomponent entries
+                    for sc in subcomponents:
+                        for key in subjects:
+                            if key.lower() == sc or sc in key.lower():
+                                sub_mapping[sc] = key
+                                break
                     
-                    # --- Build results table for all subjects ---
+                    # --- Compute MAPEH quarterly grades if subcomponents exist ---
+                    if mapeh_key and len(sub_mapping) == 4:
+                        # For each quarter, compute average of subcomponent grades
+                        mapeh_q = {'q1': [], 'q2': [], 'q3': [], 'q4': []}
+                        for sc, key in sub_mapping.items():
+                            sub = subjects[key]
+                            if sub['has_quarters']:
+                                for q in ['q1', 'q2', 'q3', 'q4']:
+                                    if sub[q] is not None:
+                                        mapeh_q[q].append(sub[q])
+                        
+                        # Compute MAPEH's quarterly grades (round each average)
+                        mapeh_quarters = {}
+                        for q in ['q1', 'q2', 'q3', 'q4']:
+                            if len(mapeh_q[q]) == 4:
+                                avg = sum(mapeh_q[q]) / 4.0
+                                mapeh_quarters[q] = round_grade(avg)
+                            else:
+                                mapeh_quarters[q] = None
+                        
+                        # Compute MAPEH's final grade from its quarterlies
+                        if all(v is not None for v in mapeh_quarters.values()):
+                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)
+                        else:
+                            mapeh_final = "Incomplete"
+                        
+                        # Override MAPEH entry with computed quarterlies and final
+                        subjects[mapeh_key]['q1'] = mapeh_quarters['q1']
+                        subjects[mapeh_key]['q2'] = mapeh_quarters['q2']
+                        subjects[mapeh_key]['q3'] = mapeh_quarters['q3']
+                        subjects[mapeh_key]['q4'] = mapeh_quarters['q4']
+                        subjects[mapeh_key]['computed_final'] = mapeh_final
+                        subjects[mapeh_key]['has_quarters'] = all(v is not None for v in mapeh_quarters.values())
+                    else:
+                        # No MAPEH or missing subcomponents: keep as is, compute final from its own quarters if available
+                        for key in subjects:
+                            sub = subjects[key]
+                            if sub['has_quarters']:
+                                sub['computed_final'] = round_grade((sub['q1'] + sub['q2'] + sub['q3'] + sub['q4']) / 4.0)
+                            else:
+                                sub['computed_final'] = "Incomplete"
+                    
+                    # --- Compute final grades for subjects that haven't been processed yet (non-MAPEH with quarters) ---
+                    for key, sub in subjects.items():
+                        if 'computed_final' not in sub and sub['has_quarters']:
+                            sub['computed_final'] = round_grade((sub['q1'] + sub['q2'] + sub['q3'] + sub['q4']) / 4.0)
+                        elif 'computed_final' not in sub:
+                            sub['computed_final'] = "Incomplete"
+                    
+                    # --- Build results table ---
                     results = []
-                    # Core subjects that should be included in general average
-                    core_subjects = ['filipino', 'english', 'mathematics', 'science', 
-                                     'araling panlipunan', 'edukasyon sa pagpapakatao',
-                                     'technology and livelihood education', 'mapeh']
+                    # Core subjects (these are the ones that should be included in general average)
+                    core_names = ['filipino', 'english', 'mathematics', 'science', 
+                                  'araling panlipunan', 'edukasyon sa pagpapakatao',
+                                  'technology and livelihood education', 'mapeh']
                     
                     total_for_general = 0
                     count_for_general = 0
                     
-                    for name, info in subjects_dict.items():
+                    for name, info in subjects.items():
                         subject = name
                         q1 = info['q1']
                         q2 = info['q2']
                         q3 = info['q3']
                         q4 = info['q4']
-                        reported_final = info['reported_final']
+                        reported_final = info.get('reported_final')
                         computed_final = info['computed_final']
                         has_quarters = info['has_quarters']
                         
@@ -217,9 +236,9 @@ if api_key:
                         else:
                             status = "⚠️ Walang nakasulat na final"
                         
-                        # For general average: only core subjects that have a computed final (from quarters)
-                        normalized = subject.lower()
-                        is_core = any(normalized.startswith(core) or core in normalized for core in core_subjects)
+                        # For general average: only core subjects with complete quarters
+                        normalized = name.lower()
+                        is_core = any(normalized.startswith(core) or core in normalized for core in core_names)
                         if is_core and has_quarters and computed_final != "Incomplete":
                             total_for_general += computed_final
                             count_for_general += 1
