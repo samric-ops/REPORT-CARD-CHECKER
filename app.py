@@ -6,9 +6,7 @@ import json
 import re
 import math
 
-# ------------------------------
-# Custom rounding for grades
-# ------------------------------
+# Custom rounding for grades (DepEd style)
 def round_grade(avg):
     """
     Rounds a numeric average to the nearest integer.
@@ -19,7 +17,7 @@ def round_grade(avg):
 # Page config
 st.set_page_config(page_title="Report Card Checker", page_icon="📝", layout="wide")
 
-# Custom CSS for nicer UI
+# Custom CSS
 st.markdown("""
     <style>
     .main-header {
@@ -32,14 +30,6 @@ st.markdown("""
         text-align: center;
         color: #4a6a5c;
         margin-bottom: 2rem;
-    }
-    .success-text {
-        color: #28a745;
-        font-weight: bold;
-    }
-    .error-text {
-        color: #dc3545;
-        font-weight: bold;
     }
     footer {
         text-align: center;
@@ -62,9 +52,7 @@ with st.sidebar:
     if api_key:
         try:
             genai.configure(api_key=api_key)
-            # Fetch available models
             models = genai.list_models()
-            # Filter for generateContent support
             available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
             if not available_models:
                 st.error("Walang available na modelo para sa generateContent. Tiyaking tama ang API key.")
@@ -104,7 +92,6 @@ if api_key:
                 try:
                     model = genai.GenerativeModel(selected_model_full)
                     
-                    # Improved prompt for better extraction
                     prompt = """
                     Analyze this image of a student report card. Extract:
                     - For each subject: the subject name, four quarterly grades (Q1, Q2, Q3, Q4), and the final grade (if visible).
@@ -142,8 +129,8 @@ if api_key:
                     
                     # Process subjects
                     results = []
-                    total_computed = 0
-                    valid_count = 0
+                    total_for_general = 0      # sum of computed finals for subjects WITH reported final
+                    count_for_general = 0      # number of subjects WITH reported final
                     
                     for item in data.get('subjects', []):
                         subject = item.get('subject', 'Unknown')
@@ -153,12 +140,17 @@ if api_key:
                         q4 = item.get('q4')
                         reported_final = item.get('reported_final')
                         
+                        # Compute the correct final grade from quarters
                         if None not in [q1, q2, q3, q4]:
                             avg = (q1 + q2 + q3 + q4) / 4.0
-                            computed_final = round_grade(avg)   # <--- FIXED ROUNDING
-                            total_computed += computed_final
-                            valid_count += 1
+                            computed_final = round_grade(avg)
                             
+                            # Only include in general average if this subject has a reported final grade
+                            if reported_final is not None:
+                                total_for_general += computed_final
+                                count_for_general += 1
+                            
+                            # Determine status
                             if reported_final is not None:
                                 status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
                             else:
@@ -185,15 +177,15 @@ if api_key:
                     
                     # General Average
                     st.subheader("📈 General Average Check")
-                    if valid_count > 0:
-                        computed_avg = round(total_computed / valid_count, 2)
+                    if count_for_general > 0:
+                        computed_avg = round(total_for_general / count_for_general, 2)
                         reported_avg = data.get('reported_general_average')
                         
                         col1, col2 = st.columns(2)
                         with col1:
                             st.metric("Nakasulat na General Average", reported_avg if reported_avg is not None else "—")
                         with col2:
-                            st.metric("Na-compute ng System", computed_avg)
+                            st.metric("Na-compute ng System (batay sa mga asignaturang may final grade)", computed_avg)
                         
                         if reported_avg is not None:
                             if abs(float(reported_avg) - computed_avg) < 0.01:
