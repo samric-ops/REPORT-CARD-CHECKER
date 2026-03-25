@@ -130,7 +130,7 @@ if api_key:
                     normalized_names = {key.strip().lower(): key for key in subjects}
                     mapeh_key = None
                     subcomponents = ['music', 'arts', 'pe', 'health']
-                    sub_mapping = {}
+                    sub_mapping = {}  # maps subcomponent name (e.g., 'music') to original subject key
                     
                     # Find MAPEH entry
                     for norm_name, orig_name in normalized_names.items():
@@ -138,12 +138,17 @@ if api_key:
                             mapeh_key = orig_name
                             break
                     
-                    # Find subcomponent entries
+                    # Find subcomponent entries (exact or contains)
                     for sc in subcomponents:
                         for norm_name, orig_name in normalized_names.items():
-                            if norm_name == sc or sc in norm_name:
+                            # Allow variations like "Physical Education" for "pe"
+                            if norm_name == sc or (sc == 'pe' and 'physical' in norm_name) or (sc in norm_name):
                                 sub_mapping[sc] = orig_name
                                 break
+                    
+                    # Store computed MAPEH quarterlies for later display/comparison
+                    mapeh_computed_quarters = {'q1': None, 'q2': None, 'q3': None, 'q4': None}
+                    mapeh_quarter_status = {}
                     
                     # --- Compute MAPEH quarterly grades if subcomponents exist ---
                     if mapeh_key and len(sub_mapping) == 4:
@@ -165,7 +170,22 @@ if api_key:
                             else:
                                 mapeh_quarters[q] = None
                         
-                        # Compute MAPEH's final grade from its quarterlies
+                        # Compare with reported MAPEH quarterlies
+                        reported_mapeh = subjects[mapeh_key]
+                        for q in ['q1', 'q2', 'q3', 'q4']:
+                            reported = reported_mapeh[q]
+                            computed = mapeh_quarters[q]
+                            if computed is not None and reported is not None:
+                                if computed != reported:
+                                    mapeh_quarter_status[q] = f"❌ Mali (dapat {computed})"
+                                else:
+                                    mapeh_quarter_status[q] = "✅ Tama"
+                            elif computed is None:
+                                mapeh_quarter_status[q] = "⚠️ Kulang ang subcomponents"
+                            else:
+                                mapeh_quarter_status[q] = "⚠️ Walang nakasulat"
+                        
+                        # Compute MAPEH's final grade from its computed quarterlies
                         if all(v is not None for v in mapeh_quarters.values()):
                             mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)
                         else:
@@ -178,6 +198,7 @@ if api_key:
                         subjects[mapeh_key]['q4'] = mapeh_quarters['q4']
                         subjects[mapeh_key]['computed_final'] = mapeh_final
                         subjects[mapeh_key]['has_quarters'] = all(v is not None for v in mapeh_quarters.values())
+                        subjects[mapeh_key]['quarter_status'] = mapeh_quarter_status  # store for display
                     else:
                         # No MAPEH or missing subcomponents: compute final from its own quarters if available
                         for key in subjects:
@@ -213,14 +234,20 @@ if api_key:
                         computed_final = info['computed_final']
                         has_quarters = info['has_quarters']
                         
-                        # Determine status
+                        # Determine status for final grade
                         if reported_final is not None:
                             if has_quarters and computed_final != "Incomplete":
-                                status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
+                                final_status = "✅ Tama" if computed_final == reported_final else "❌ Mali"
                             else:
-                                status = "⚠️ Kulang ang quarterly grades"
+                                final_status = "⚠️ Kulang ang quarterly grades"
                         else:
-                            status = "⚠️ Walang nakasulat na final"
+                            final_status = "⚠️ Walang nakasulat na final"
+                        
+                        # For MAPEH, also show quarterly status in a separate column (optional)
+                        if subject.lower() == mapeh_key.lower() and 'quarter_status' in info:
+                            quarter_status_str = ", ".join([f"{q.upper()}: {s}" for q, s in info['quarter_status'].items()])
+                        else:
+                            quarter_status_str = ""
                         
                         # For general average: only core subjects with complete quarters
                         normalized = name.lower()
@@ -237,13 +264,17 @@ if api_key:
                             "Q4": q4 if q4 is not None else "—",
                             "Nakasulat na Final": reported_final if reported_final is not None else "—",
                             "Na-compute na Final": computed_final,
-                            "Status": status
+                            "Status (Final)": final_status,
+                            "MAPEH Quarterly Check": quarter_status_str
                         })
                     
                     # Display subject grades table
                     if results:
                         st.subheader("📚 Subject Grades Check")
                         df = pd.DataFrame(results)
+                        # Reorder columns for better readability
+                        cols = ["Subject", "Q1", "Q2", "Q3", "Q4", "Nakasulat na Final", "Na-compute na Final", "Status (Final)", "MAPEH Quarterly Check"]
+                        df = df[cols]
                         st.dataframe(df, use_container_width=True, height=400)
                     else:
                         st.warning("Walang nakitang subject sa report card.")
