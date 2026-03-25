@@ -8,7 +8,6 @@ import math
 
 # Custom rounding for grades (DepEd style: 0.5 rounds up)
 def round_grade(avg):
-    """Rounds a numeric average to the nearest integer (0.5 rounds up)."""
     return math.floor(avg + 0.5)
 
 # Page config
@@ -17,23 +16,9 @@ st.set_page_config(page_title="Report Card Checker", page_icon="📝", layout="w
 # Custom CSS
 st.markdown("""
     <style>
-    .main-header {
-        font-size: 2.5rem;
-        color: #1f4e3f;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .subheader {
-        text-align: center;
-        color: #4a6a5c;
-        margin-bottom: 2rem;
-    }
-    footer {
-        text-align: center;
-        font-size: 0.8rem;
-        color: #6c757d;
-        margin-top: 3rem;
-    }
+    .main-header { font-size: 2.5rem; color: #1f4e3f; text-align: center; margin-bottom: 1rem; }
+    .subheader { text-align: center; color: #4a6a5c; margin-bottom: 2rem; }
+    footer { text-align: center; font-size: 0.8rem; color: #6c757d; margin-top: 3rem; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -141,21 +126,23 @@ if api_key:
                         }
                     
                     # --- Identify MAPEH and its subcomponents ---
+                    # Normalize names for robust matching
+                    normalized_names = {key.strip().lower(): key for key in subjects}
                     mapeh_key = None
                     subcomponents = ['music', 'arts', 'pe', 'health']
                     sub_mapping = {}
                     
-                    # First, find MAPEH entry (case-insensitive)
-                    for key in subjects:
-                        if 'mapeh' in key.lower():
-                            mapeh_key = key
+                    # Find MAPEH entry
+                    for norm_name, orig_name in normalized_names.items():
+                        if 'mapeh' in norm_name:
+                            mapeh_key = orig_name
                             break
                     
                     # Find subcomponent entries
                     for sc in subcomponents:
-                        for key in subjects:
-                            if key.lower() == sc or sc in key.lower():
-                                sub_mapping[sc] = key
+                        for norm_name, orig_name in normalized_names.items():
+                            if norm_name == sc or sc in norm_name:
+                                sub_mapping[sc] = orig_name
                                 break
                     
                     # --- Compute MAPEH quarterly grades if subcomponents exist ---
@@ -174,13 +161,13 @@ if api_key:
                         for q in ['q1', 'q2', 'q3', 'q4']:
                             if len(mapeh_q[q]) == 4:
                                 avg = sum(mapeh_q[q]) / 4.0
-                                mapeh_quarters[q] = round_grade(avg)   # ✅ Each quarter grade is rounded
+                                mapeh_quarters[q] = round_grade(avg)
                             else:
                                 mapeh_quarters[q] = None
                         
-                        # Compute MAPEH's final grade from its quarterlies (average of rounded quarterlies, then round)
+                        # Compute MAPEH's final grade from its quarterlies
                         if all(v is not None for v in mapeh_quarters.values()):
-                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)   # ✅ Final grade rounded
+                            mapeh_final = round_grade(sum(mapeh_quarters.values()) / 4.0)
                         else:
                             mapeh_final = "Incomplete"
                         
@@ -192,7 +179,7 @@ if api_key:
                         subjects[mapeh_key]['computed_final'] = mapeh_final
                         subjects[mapeh_key]['has_quarters'] = all(v is not None for v in mapeh_quarters.values())
                     else:
-                        # No MAPEH or missing subcomponents: keep as is, compute final from its own quarters if available
+                        # No MAPEH or missing subcomponents: compute final from its own quarters if available
                         for key in subjects:
                             sub = subjects[key]
                             if sub['has_quarters']:
@@ -200,7 +187,7 @@ if api_key:
                             else:
                                 sub['computed_final'] = "Incomplete"
                     
-                    # --- Compute final grades for subjects that haven't been processed yet (non-MAPEH with quarters) ---
+                    # --- Compute final grades for subjects that haven't been processed yet ---
                     for key, sub in subjects.items():
                         if 'computed_final' not in sub and sub['has_quarters']:
                             sub['computed_final'] = round_grade((sub['q1'] + sub['q2'] + sub['q3'] + sub['q4']) / 4.0)
@@ -209,7 +196,6 @@ if api_key:
                     
                     # --- Build results table ---
                     results = []
-                    # Core subjects (these are the ones that should be included in general average)
                     core_names = ['filipino', 'english', 'mathematics', 'science', 
                                   'araling panlipunan', 'edukasyon sa pagpapakatao',
                                   'technology and livelihood education', 'mapeh']
