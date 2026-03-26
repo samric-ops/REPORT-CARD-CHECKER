@@ -170,6 +170,7 @@ if api_key:
                     mapeh_computed_quarters = {'q1': None, 'q2': None, 'q3': None, 'q4': None}
                     mapeh_quarter_status = {}
                     mapeh_computed_final = None
+                    subcomponent_grades = {}  # Store for detailed display
                     
                     # --- Compute MAPEH quarterly grades if all four subcomponents found ---
                     if mapeh_key and len(sub_mapping) == 4:
@@ -181,6 +182,10 @@ if api_key:
                             if not sub['has_quarters']:
                                 all_sub_have_quarters = False
                                 break
+                            # Store grades for display
+                            subcomponent_grades[sc] = {
+                                'q1': sub['q1'], 'q2': sub['q2'], 'q3': sub['q3'], 'q4': sub['q4']
+                            }
                             for q in ['q1', 'q2', 'q3', 'q4']:
                                 if sub[q] is not None:
                                     mapeh_q[q].append(sub[q])
@@ -316,6 +321,50 @@ if api_key:
                         st.dataframe(df, use_container_width=True, height=400)
                     else:
                         st.warning("Walang nakitang subject sa report card.")
+                    
+                    # --- NEW: MAPEH Detailed Breakdown Section ---
+                    if mapeh_key and len(sub_mapping) == 4 and subcomponent_grades:
+                        st.subheader("🎵 MAPEH Quarterly Breakdown")
+                        st.markdown("**Ipinapakita sa ibaba ang mga subcomponent grades at ang kalkuladong MAPEH grade kada quarter.**")
+                        
+                        # Prepare data for subcomponent display
+                        sub_rows = []
+                        for sc in subcomponents:
+                            sc_name = sc.upper() if sc != 'pe' else 'P.E.'  # Capitalization
+                            sc_grades = subcomponent_grades.get(sc, {})
+                            sub_rows.append({
+                                "Subcomponent": sc_name,
+                                "Q1": sc_grades.get('q1', '—'),
+                                "Q2": sc_grades.get('q2', '—'),
+                                "Q3": sc_grades.get('q3', '—'),
+                                "Q4": sc_grades.get('q4', '—'),
+                            })
+                        sub_df = pd.DataFrame(sub_rows)
+                        st.dataframe(sub_df, use_container_width=True, height=200)
+                        
+                        # MAPEH quarterly comparison table
+                        mapeh_comp = []
+                        orig_mapeh = subjects[mapeh_key]
+                        for q in ['q1', 'q2', 'q3', 'q4']:
+                            reported = orig_mapeh[q]
+                            computed = mapeh_computed_quarters.get(q)
+                            status = "✅" if (reported is not None and computed is not None and reported == computed) else "❌" if (reported is not None and computed is not None and reported != computed) else "⚠️"
+                            mapeh_comp.append({
+                                "Quarter": q.upper(),
+                                "Nakasulat na Grade": reported if reported is not None else "—",
+                                "Na-compute na Grade (Average ng subcomponents)": computed if computed is not None else "—",
+                                "Status": status
+                            })
+                        comp_df = pd.DataFrame(mapeh_comp)
+                        st.dataframe(comp_df, use_container_width=True, height=150)
+                        
+                        # Highlight if Q3 or Q4 are incorrect
+                        q3_status = comp_df[comp_df["Quarter"] == "Q3"]["Status"].values[0] if not comp_df.empty else ""
+                        q4_status = comp_df[comp_df["Quarter"] == "Q4"]["Status"].values[0] if not comp_df.empty else ""
+                        if q3_status == "❌":
+                            st.warning("⚠️ **MAPEH Q3 grade ay hindi tugma sa kalkulasyon.**")
+                        if q4_status == "❌":
+                            st.warning("⚠️ **MAPEH Q4 grade ay hindi tugma sa kalkulasyon.**")
                     
                     # General Average
                     st.subheader("📈 General Average Check")
